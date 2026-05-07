@@ -39,7 +39,7 @@ fn softmax_expected(data: &[f32]) -> Vec<f32> {
 
 fn test_relu<T: Tensor>(factory: TensorFactory<T>) {
     // No batching: ReLU should preserve positive matrix entries and clamp negative ones.
-    assert_tensor_eq(
+    assert_output_eq(
         tensor(factory, &[2, 3], vec![
             -2.0, -1.0, 0.0,
              1.0,  2.0, 3.0,
@@ -51,7 +51,7 @@ fn test_relu<T: Tensor>(factory: TensorFactory<T>) {
     );
 
     // Batched input: element-wise ops should keep batch boundaries irrelevant to the value rule.
-    assert_tensor_eq(
+    assert_output_eq(
         tensor(factory, &[2, 2, 3], vec![
             // batch 0
             -1.0,  2.0, -3.0,
@@ -71,7 +71,7 @@ fn test_relu<T: Tensor>(factory: TensorFactory<T>) {
     );
 
     // Wide matrix: catches index assumptions that only work for square-ish shapes.
-    assert_tensor_eq(
+    assert_output_eq(
         tensor(factory, &[2, 10], vec![
             -10.0, -9.0, -8.0, -7.0, -6.0, -5.0, -4.0, -3.0, -2.0, -1.0,
               0.0,  1.0,  2.0,  3.0,  4.0,  5.0,  6.0,  7.0,  8.0,  9.0,
@@ -83,7 +83,7 @@ fn test_relu<T: Tensor>(factory: TensorFactory<T>) {
     );
 
     // Tall matrix: pairs with the wide case so row/column indexing is tested both ways.
-    assert_tensor_eq(
+    assert_output_eq(
         tensor(factory, &[10, 2], vec![
              9.0,  8.0,
              7.0,  6.0,
@@ -114,7 +114,7 @@ fn test_relu<T: Tensor>(factory: TensorFactory<T>) {
 fn test_softmax<T: Tensor>(factory: TensorFactory<T>) {
     // No batching: validates the global normalization rule used by the current implementation.
     let data = vec![0.0, 1.0, 2.0];
-    assert_tensor_eq(
+    assert_output_eq(
         tensor(factory, &[3], data.clone()).softmax(),
         cpu_tensor(&[3], softmax_expected(&data)),
     );
@@ -128,7 +128,7 @@ fn test_softmax<T: Tensor>(factory: TensorFactory<T>) {
         0.0, 0.0,
         0.0, 0.0,
     ];
-    assert_tensor_eq(
+    assert_output_eq(
         tensor(factory, &[2, 2, 2], batched_data.clone()).softmax(),
         cpu_tensor(&[2, 2, 2], softmax_expected(&batched_data)),
     );
@@ -138,7 +138,7 @@ fn test_softmax<T: Tensor>(factory: TensorFactory<T>) {
         0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
         0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
     ];
-    assert_tensor_eq(
+    assert_output_eq(
         tensor(factory, &[2, 10], wide_data.clone()).softmax(),
         cpu_tensor(&[2, 10], softmax_expected(&wide_data)),
     );
@@ -156,7 +156,7 @@ fn test_softmax<T: Tensor>(factory: TensorFactory<T>) {
         0.0, 0.0,
         0.0, 0.0,
     ];
-    assert_tensor_eq(
+    assert_output_eq(
         tensor(factory, &[10, 2], tall_data.clone()).softmax(),
         cpu_tensor(&[10, 2], softmax_expected(&tall_data)),
     );
@@ -164,7 +164,7 @@ fn test_softmax<T: Tensor>(factory: TensorFactory<T>) {
 
 fn test_neg<T: Tensor>(factory: TensorFactory<T>) {
     // No batching: negation should flip signs without changing shape.
-    assert_tensor_eq(
+    assert_output_eq(
         tensor(factory, &[2, 3], vec![
             -2.0, -1.0, 0.0,
              1.0,  2.0, 3.0,
@@ -176,7 +176,7 @@ fn test_neg<T: Tensor>(factory: TensorFactory<T>) {
     );
 
     // Batched input: sign changes should not depend on batch position.
-    assert_tensor_eq(
+    assert_output_eq(
         tensor(factory, &[2, 2, 3], vec![
             // batch 0
              1.0, -2.0,  3.0,
@@ -196,13 +196,13 @@ fn test_neg<T: Tensor>(factory: TensorFactory<T>) {
     );
 
     // Wide matrix: validates sign flipping across long contiguous rows.
-    assert_tensor_eq(
+    assert_output_eq(
         tensor(factory, &[2, 10], vec![1.0; 20]).neg(),
         cpu_tensor(&[2, 10], vec![-1.0; 20]),
     );
 
     // Tall matrix: validates sign flipping across many short rows.
-    assert_tensor_eq(
+    assert_output_eq(
         tensor(factory, &[10, 2], vec![-1.0; 20]).neg(),
         cpu_tensor(&[10, 2], vec![1.0; 20]),
     );
