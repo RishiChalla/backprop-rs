@@ -22,6 +22,20 @@ impl CPUTensor {
             shape,
         }
     }
+
+    /// Creates a tensor from flat row-major data when it exactly fills the shape.
+    pub fn from_data(shape: TensorShape, data: Vec<f32>) -> Option<Self> {
+        if data.len() != shape.num_elements() { return None; }
+
+        Some(Self { data, shape })
+    }
+
+    /// Checks whether shape and values match within an implementation-specific tolerance.
+    pub fn eq_epsilon(&self, other: &Self, epsilon: f32) -> bool {
+        self.shape == other.shape
+            && self.data.len() == other.data.len()
+            && self.data.iter().zip(other.data.iter()).all(|(a, b)| (a - b).abs() <= epsilon)
+    }
 }
 
 impl Tensor for CPUTensor {
@@ -50,14 +64,15 @@ impl Tensor for CPUTensor {
 
     // Multi-var operations
     fn add(&self, other: &Self) -> TensorOutput<Self> {
-        // Validate that shape matches
-        if self.shape.matches_batch_size_op(&other.shape) {
+        if !self.shape.matches_same_size_op(&other.shape) {
             return TensorOutput::shape_mismatch(TensorOperation::Add, &self.shape, &other.shape);
         }
 
+        let right_count = other.shape.num_elements();
+
         TensorOutput::Tensor(Self {
             shape: self.shape.clone(),
-            data: self.data.iter().zip(other.data.iter()).map(|(a, b)| a + b).collect(),
+            data: self.data.iter().enumerate().map(|(idx, a)| a + other.data[idx % right_count]).collect(),
         })
     }
     fn sub(&self, other: &Self) -> TensorOutput<Self> {
@@ -86,18 +101,19 @@ impl Tensor for CPUTensor {
 
         // matches_mul_size_op guarantees that left batch size is either equal to right batch size, OR
         // right does not have any batching.
-        // Thus we can safely use batch_size to index both left and right (provided right is checked for overflow)
-        let batch_size = left_height * left_width;
-        let right_count = other.shape.num_elements();
+        let output_matrix_size = left_height * right_width;
+        let left_matrix_size = left_height * left_width;
+        let right_matrix_size = left_width * right_width;
+        let right_is_batched = !other.shape.batch_dims().is_empty();
 
-        // Populate result
         TensorOutput::Tensor(Self {
             data: (0..output_shape.num_elements()).map(|idx| {
-                let (batch_idx, mat_idx) = (idx / batch_size, idx % batch_size);
+                let (batch_idx, mat_idx) = (idx / output_matrix_size, idx % output_matrix_size);
                 let (row, col) = (mat_idx / right_width, mat_idx % right_width);
-                let (left_batch_idx, right_batch_idx) = (batch_idx * batch_size, (batch_idx * batch_size) % right_count);
+                let left_batch_idx = batch_idx * left_matrix_size;
+                let right_batch_idx = if right_is_batched { batch_idx * right_matrix_size } else { 0 };
 
-                // Dot row in left with col in right
+                // Dot row in left with col in right.
                 (0..left_width).map(|i| {
                     self.data[left_batch_idx + row * left_width + i] * other.data[right_batch_idx + i * right_width + col]
                 }).sum::<f32>()
@@ -105,4 +121,6 @@ impl Tensor for CPUTensor {
             shape: output_shape,
         })
     }
+
+    fn to_cpu(&self) -> CPUTensor { self.clone() }
 }
