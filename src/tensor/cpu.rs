@@ -1,4 +1,4 @@
-use crate::{Tensor, TensorOutput, TensorShape, tensor::TensorOperation};
+use crate::{Tensor, TensorOperation, TensorOutput, TensorShape};
 
 
 /// Tensor stored on the CPU, with no vectorization (no CUDA, no SIMD). A naive implementation with wide compatibility.
@@ -15,14 +15,6 @@ pub struct CPUTensor {
 }
 
 impl CPUTensor {
-    /// Creates a zero-initialized tensor of the given shape.
-    pub fn new(shape: TensorShape) -> Self {
-        Self {
-            data: vec![0.0; shape.num_elements()],
-            shape,
-        }
-    }
-
     /// Creates a tensor from flat row-major data when it exactly fills the shape.
     pub fn from_data(shape: TensorShape, data: Vec<f32>) -> Option<Self> {
         if data.len() != shape.num_elements() { return None; }
@@ -39,7 +31,21 @@ impl CPUTensor {
 }
 
 impl Tensor for CPUTensor {
-    fn shape(&self) -> &TensorShape { &self.shape }
+    /// Creates a zero-initialized tensor of the given shape.
+    fn new(shape: TensorShape) -> Self {
+        Self {
+            data: vec![0.0; shape.num_elements()],
+            shape,
+        }
+    }
+
+    /// Creates an initialized tensor of the given shape filled with the given scalar.
+    fn from_scalar(shape: TensorShape, scalar: f32) -> Self {
+        Self {
+            data: vec![scalar; shape.num_elements()],
+            shape,
+        }
+    }
 
     // Single-var operations
     fn relu(&self) -> Self {
@@ -123,4 +129,5 @@ impl Tensor for CPUTensor {
     }
 
     fn to_cpu(&self) -> CPUTensor { self.clone() }
+    fn shape(&self) -> &TensorShape { &self.shape }
 }
