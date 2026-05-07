@@ -1,4 +1,4 @@
-use crate::{ConstructableTensor, Tensor, TensorOperation, TensorOutput, TensorShape};
+use crate::{ConstructableTensor, Tensor, TensorOpError, TensorOperation, TensorOutput, TensorShape};
 
 
 /// Tensor stored on the CPU, with no vectorization (no CUDA, no SIMD). A naive implementation with wide compatibility.
@@ -50,47 +50,44 @@ impl CPUTensor {
 
 impl Tensor for CPUTensor {
     // Single-var operations
-    fn relu(&self) -> TensorOutput<Self> {
-        TensorOutput::Tensor(Self {
+    fn relu(&self) -> Result<Self, TensorOpError> {
+        Ok(Self {
             shape: self.shape.clone(),
             data: self.data.iter().map(|x| x.max(0.0)).collect(),
         })
     }
-    fn softmax(&self) -> TensorOutput<Self> {
+    fn softmax(&self) -> Result<Self, TensorOpError> {
         let exp_sum = self.data.iter().cloned().map(f32::exp).sum::<f32>();
-        TensorOutput::Tensor(Self {
+        Ok(Self {
             shape: self.shape.clone(),
             data: self.data.iter().map(|&x| f32::exp(x) / exp_sum).collect(),
         })
     }
-    fn neg(&self) -> TensorOutput<Self> {
-        self.mul_scalar(-1.0).map_op(TensorOperation::Neg)
+    fn neg(&self) -> Result<Self, TensorOpError> {
+        self.mul_scalar(-1.0).map_err(|err| err.with_op(TensorOperation::Neg))
     }
 
     // Multi-var operations
-    fn add(&self, other: &Self) -> TensorOutput<Self> {
+    fn add(&self, other: &Self) -> Result<Self, TensorOpError> {
         if !self.shape.matches_same_size_op(&other.shape) {
-            return TensorOutput::shape_mismatch(TensorOperation::Add, &self.shape, &other.shape);
+            return Err(TensorOpError::shape_mismatch(TensorOperation::Add, &self.shape, &other.shape));
         }
 
         let right_count = other.shape.num_elements();
 
-        TensorOutput::Tensor(Self {
+        Ok(Self {
             shape: self.shape.clone(),
             data: self.data.iter().enumerate().map(|(idx, a)| a + other.data[idx % right_count]).collect(),
         })
     }
-    fn sub(&self, other: &Self) -> TensorOutput<Self> {
-        let neg = match other.neg().map_op(TensorOperation::Sub) {
-            TensorOutput::Tensor(neg) => neg,
-            err => return err,
-        };
-        self.add(&neg).map_op(TensorOperation::Sub)
+    fn sub(&self, other: &Self) -> Result<Self, TensorOpError> {
+        let neg = other.neg().map_err(|err| err.with_op(TensorOperation::Sub))?;
+        self.add(&neg).map_err(|err| err.with_op(TensorOperation::Sub))
     }
-    fn mul(&self, other: &Self) -> TensorOutput<Self> {
+    fn mul(&self, other: &Self) -> Result<Self, TensorOpError> {
         // Validate shape. matches_mul_size_op Guarantees that both left and right are matrices, meaning indexing [0] and [1] cannot panic.
         if !self.shape.matches_mul_size_op(&other.shape) {
-            return TensorOutput::shape_mismatch(TensorOperation::Mul, &self.shape, &other.shape);
+            return Err(TensorOpError::shape_mismatch(TensorOperation::Mul, &self.shape, &other.shape));
         }
 
         // Shape is (our_batch, our height, other width)
@@ -102,7 +99,7 @@ impl Tensor for CPUTensor {
 
         let batch_dims = self.shape.batch_dims();
         let Some(output_shape) = TensorShape::from_batch_size(batch_dims, &[left_height, right_width]) else {
-            return TensorOutput::shape_mismatch(TensorOperation::Mul, &self.shape, &other.shape);
+            return Err(TensorOpError::shape_mismatch(TensorOperation::Mul, &self.shape, &other.shape));
         };
 
         // matches_mul_size_op guarantees that left batch size is either equal to right batch size, OR
@@ -112,7 +109,7 @@ impl Tensor for CPUTensor {
         let right_matrix_size = left_width * right_width;
         let right_is_batched = !other.shape.batch_dims().is_empty();
 
-        TensorOutput::Tensor(Self {
+        Ok(Self {
             data: (0..output_shape.num_elements()).map(|idx| {
                 let (batch_idx, mat_idx) = (idx / output_matrix_size, idx % output_matrix_size);
                 let (row, col) = (mat_idx / right_width, mat_idx % right_width);
@@ -127,8 +124,8 @@ impl Tensor for CPUTensor {
             shape: output_shape,
         })
     }
-    fn mul_scalar(&self, other: f32) -> TensorOutput<Self> {
-        TensorOutput::Tensor(Self {
+    fn mul_scalar(&self, other: f32) -> Result<Self, TensorOpError> {
+        Ok(Self {
             data: self.data.iter().map(|v| v * other).collect(),
             shape: self.shape.clone(),
         })

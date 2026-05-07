@@ -29,17 +29,31 @@ pub struct TensorOpError {
     pub(crate) error: TensorOpErrorVariant,
 }
 
-/// Error variants for issues that occur during a tensor operation
-#[derive(Debug, Error, Clone)]
-pub enum TensorOpErrorVariant {
-    #[error("Invalid shape: Our shape={shape} - Other's shape={other_shape}")]
-    ShapeMismatch { shape: TensorShape, other_shape: TensorShape },
+impl TensorOpError {
+    pub(crate) fn with_op(mut self, op: TensorOperation) -> Self {
+        self.operation = op;
+        self
+    }
+
+    pub(crate) fn shape_mismatch(op: TensorOperation, shape: &TensorShape, other_shape: &TensorShape) -> Self {
+        Self {
+            operation: op,
+            error: TensorOpErrorVariant::ShapeMismatch { shape: shape.clone(), other_shape: other_shape.clone() },
+        }
+    }
 }
 
 impl Display for TensorOpError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Error during {:?} operation - {}", self.operation, self.error)
     }
+}
+
+/// Error variants for issues that occur during a tensor operation
+#[derive(Debug, Error, Clone)]
+pub enum TensorOpErrorVariant {
+    #[error("Invalid shape: Our shape={shape} - Other's shape={other_shape}")]
+    ShapeMismatch { shape: TensorShape, other_shape: TensorShape },
 }
 
 // >----------------------------------------------- Tensor Output -----------------------------------------------<
@@ -52,23 +66,6 @@ pub enum TensorOutput<T: Tensor> {
 }
 
 impl<T: Tensor> TensorOutput<T> {
-    /// Creates a new Shape mismatch error
-    pub(crate) fn shape_mismatch(op: TensorOperation, shape: &TensorShape, other_shape: &TensorShape) -> Self {
-        TensorOutput::Invalid(TensorOpError {
-            operation: op,
-            error: TensorOpErrorVariant::ShapeMismatch {
-                shape: shape.clone(),
-                other_shape: other_shape.clone(),
-            },
-        })
-    }
-
-    /// Changes the operation of this error, useful for error propogation while reporting the correct operation.
-    pub(crate) fn map_op(mut self, op: TensorOperation) -> Self {
-        if let Self::Invalid(e) = &mut self { e.operation = op; }
-        self
-    }
-
     pub fn ok(self) -> Result<T, TensorOpError> {
         match self {
             Self::Tensor(t) => Ok(t),
@@ -77,10 +74,10 @@ impl<T: Tensor> TensorOutput<T> {
     }
 
     /// Performs an operation on this and another (rhs) tensor given a closure to perform the operation.
-    pub fn op(&self, other: &Self, op: impl Fn(&T, &T) -> Self) -> Self {
+    pub fn op(&self, other: &Self, op: impl Fn(&T, &T) -> Result<T, TensorOpError>) -> Self {
         match (self, other) {
             // Both left and right are valid - perform operation
-            (Self::Tensor(left), Self::Tensor(right)) => op(left, right),
+            (Self::Tensor(left), Self::Tensor(right)) => op(left, right).into(),
             // One of the sides were invalid - propogate the error
             (Self::Tensor(_), Self::Invalid(error))
              | (Self::Invalid(error), Self::Tensor(_))

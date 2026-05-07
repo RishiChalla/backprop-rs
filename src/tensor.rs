@@ -14,24 +14,24 @@ mod test;
 /// Backend may be implemented by different types, such as [`CPUTensor`].
 pub trait Tensor: PartialEq + Sized {
     // Single-var operations
-    fn relu(&self) -> TensorOutput<Self>;
-    fn softmax(&self) -> TensorOutput<Self>;
-    fn neg(&self) -> TensorOutput<Self>;
+    fn relu(&self) -> Result<Self, TensorOpError>;
+    fn softmax(&self) -> Result<Self, TensorOpError>;
+    fn neg(&self) -> Result<Self, TensorOpError>;
 
     // Multi-var operations
-    fn add(&self, other: &Self) -> TensorOutput<Self>;
-    fn sub(&self, other: &Self) -> TensorOutput<Self>;
-    fn mul(&self, other: &Self) -> TensorOutput<Self>;
-    fn mul_scalar(&self, other: f32) -> TensorOutput<Self>;
+    fn add(&self, other: &Self) -> Result<Self, TensorOpError>;
+    fn sub(&self, other: &Self) -> Result<Self, TensorOpError>;
+    fn mul(&self, other: &Self) -> Result<Self, TensorOpError>;
+    fn mul_scalar(&self, other: f32) -> Result<Self, TensorOpError>;
 
     // Converts the tensor to an easily CPU readable tensor, useful for extracting data
     fn to_cpu(&self) -> CPUTensor;
 
     fn shape(&self) -> &TensorShape;
-    fn to_output(self) -> TensorOutput<Self> { TensorOutput::Tensor(self) }
+    fn to_output(self) -> Result<Self, TensorOpError> { Ok(self) }
 
     /// Starts tracking gradients for further operations on this tensor.
-    fn with_grad(self) -> WithGradient<Self> where Self: ConstructableTensor { self.into() }
+    fn with_grad(self) -> WithGradient<Self> where Self: ConstructableTensor + DifferentiableTensor { self.into() }
 }
 
 /// Tensors that support creation. Some tensor types (ie Gradients) must be converted from CPU tensor types,
@@ -54,8 +54,8 @@ pub trait DifferentiableTensor: Tensor {
     fn neg_d(&self) -> Self;
 
     // Multi-var operations
-    fn add_d(&self, other: &Self) -> TensorOutput<Self>;
-    fn sub_d(&self, other: &Self) -> TensorOutput<Self>;
-    fn mul_d(&self, other: &Self) -> TensorOutput<Self>;
-    fn mul_scalar_d(&self, other: f32) -> TensorOutput<Self>;
+    fn add_d(&self, other: &Self) -> Result<Self, TensorOpError>;
+    fn sub_d(&self, other: &Self) -> Result<Self, TensorOpError>;
+    fn mul_d(&self, other: &Self) -> Result<Self, TensorOpError>;
+    fn mul_scalar_d(&self, other: f32) -> Result<Self, TensorOpError>;
 }

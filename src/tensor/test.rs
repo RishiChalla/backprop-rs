@@ -1,5 +1,5 @@
-use super::{Tensor, TensorOutput};
-use crate::{CPUTensor, TensorShape};
+
+use crate::{CPUTensor, Tensor, TensorOpError, TensorShape};
 
 const EPSILON: f32 = 1e-5;
 
@@ -13,10 +13,10 @@ fn cpu_tensor(shape: &[usize], data: Vec<f32>) -> CPUTensor {
     CPUTensor::from_data(TensorShape::from(shape.to_vec()), data).expect("test data should fill shape exactly")
 }
 
-fn expect_output<T: Tensor>(output: TensorOutput<T>) -> T {
+fn expect_output<T: Tensor>(output: Result<T, TensorOpError>) -> T {
     match output {
-        TensorOutput::Tensor(tensor) => tensor,
-        TensorOutput::Invalid(error) => panic!("expected tensor output, got error: {error}"),
+        Ok(tensor) => tensor,
+        Err(error) => panic!("expected tensor output, got error: {error}"),
     }
 }
 
@@ -28,7 +28,7 @@ fn assert_tensor_eq<T: Tensor>(actual: T, expected: CPUTensor) {
     );
 }
 
-fn assert_output_eq<T: Tensor>(actual: TensorOutput<T>, expected: CPUTensor) {
+fn assert_output_eq<T: Tensor>(actual: Result<T, TensorOpError>, expected: CPUTensor) {
     assert_tensor_eq(expect_output(actual), expected);
 }
 
