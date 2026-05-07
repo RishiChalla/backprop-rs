@@ -1,9 +1,27 @@
 use std::fmt::Display;
 
+/// Represents the shape of a tensor.
+/// For 1-dimensional, this represents a vector.
+/// For 2-dimensional, this is (height, width)
+/// For 3-dimensional, this is (batch, height, width)
+/// For arbitrary batch dimensions, this is (batch, ..., height, width)
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TensorShape(Vec<usize>);
 
+impl From<Vec<usize>> for TensorShape {
+    fn from(shape: Vec<usize>) -> Self { Self(shape) }
+}
+
 impl TensorShape {
+    /// Creates a new tensor shape from batch dimensions and the size.
+    /// Batch dimensions can be 0 or more dimensions.
+    /// Size must be <= 2 dimensions.
+    pub fn from_batch_size(batch: &[usize], size: &[usize]) -> Option<Self> {
+        if size.len() > 2 || size.is_empty() { return None; }
+
+        Some(Self([batch, size].concat()))
+    }
+
     /// The number of dimensions in this tensor's shape.
     pub fn num_dims(&self) -> usize { self.0.len() }
     /// Gets the slice of the shape
@@ -13,6 +31,8 @@ impl TensorShape {
 
     /// Gets a slice of the last two dimensions of this tensor. Leading dimensions are treated as batch dimensions.
     /// If this is a 1-dimensional vector, the returned dimensions will have length 1 instead of 2.
+    /// For 1-dimensional, this represents a vector.
+    /// For 2-dimensional, this is (height, width)
     pub fn last_two_dims(&self) -> &[usize] {
         if self.0.len() <= 2 {
             &self.0

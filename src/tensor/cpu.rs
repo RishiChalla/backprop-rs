@@ -67,12 +67,42 @@ impl Tensor for CPUTensor {
         result
     }
     fn mul(&self, other: &Self) -> TensorOutput<Self> {
-        // Validate shape
+        // Validate shape. matches_mul_size_op Guarantees that both left and right are matrices, meaning indexing [0] and [1] cannot panic.
         if !self.shape.matches_mul_size_op(&other.shape) {
             return TensorOutput::shape_mismatch(TensorOperation::Mul, &self.shape, &other.shape);
         }
 
-        // Perform matrix multiplication
-        todo!()
+        // Shape is (our_batch, our height, other width)
+        let (left_height, left_width) = {
+            let size = self.shape.last_two_dims();
+            (size[0], size[1])
+        };
+        let right_width = other.shape.last_two_dims()[1];
+
+        let batch_dims = self.shape.batch_dims();
+        let Some(output_shape) = TensorShape::from_batch_size(batch_dims, &[left_height, right_width]) else {
+            return TensorOutput::shape_mismatch(TensorOperation::Mul, &self.shape, &other.shape);
+        };
+
+        // matches_mul_size_op guarantees that left batch size is either equal to right batch size, OR
+        // right does not have any batching.
+        // Thus we can safely use batch_size to index both left and right (provided right is checked for overflow)
+        let batch_size = left_height * left_width;
+        let right_count = other.shape.num_elements();
+
+        // Populate result
+        TensorOutput::Tensor(Self {
+            data: (0..output_shape.num_elements()).map(|idx| {
+                let (batch_idx, mat_idx) = (idx / batch_size, idx % batch_size);
+                let (row, col) = (mat_idx / right_width, mat_idx % right_width);
+                let (left_batch_idx, right_batch_idx) = (batch_idx * batch_size, (batch_idx * batch_size) % right_count);
+
+                // Dot row in left with col in right
+                (0..left_width).map(|i| {
+                    self.data[left_batch_idx + row * left_width + i] * other.data[right_batch_idx + i * right_width + col]
+                }).sum::<f32>()
+            }).collect(),
+            shape: output_shape,
+        })
     }
 }
