@@ -51,7 +51,6 @@ pub enum TensorOutput<T: Tensor> {
     Invalid(TensorOpError),
 }
 
-
 impl<T: Tensor> TensorOutput<T> {
     /// Creates a new Shape mismatch error
     pub(crate) fn shape_mismatch(op: TensorOperation, shape: &TensorShape, other_shape: &TensorShape) -> Self {
@@ -62,6 +61,12 @@ impl<T: Tensor> TensorOutput<T> {
                 other_shape: other_shape.clone(),
             },
         })
+    }
+
+    /// Changes the operation of this error, useful for error propogation while reporting the correct operation.
+    pub(crate) fn map_op(mut self, op: TensorOperation) -> Self {
+        if let Self::Invalid(e) = &mut self { e.operation = op; }
+        self
     }
 
     pub fn ok(self) -> Result<T, TensorOpError> {
@@ -86,6 +91,15 @@ impl<T: Tensor> TensorOutput<T> {
 
 impl<T: Tensor> From<TensorOutput<T>> for Result<T, TensorOpError> {
     fn from(value: TensorOutput<T>) -> Self { value.ok() }
+}
+
+impl<T: Tensor> From<Result<T, TensorOpError>> for TensorOutput<T> {
+    fn from(value: Result<T, TensorOpError>) -> Self {
+        match value {
+            Ok(t) => Self::Tensor(t),
+            Err(e) => Self::Invalid(e),
+        }
+    }
 }
 
 // >----------------------------------------------- Operator Overloading -----------------------------------------------<

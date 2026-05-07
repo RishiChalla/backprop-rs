@@ -1,4 +1,4 @@
-use crate::{Tensor, TensorOperation, TensorOutput, TensorShape};
+use crate::{ConstructableTensor, Tensor, TensorOperation, TensorOutput, TensorShape};
 
 
 /// Tensor stored on the CPU, with no vectorization (no CUDA, no SIMD). A naive implementation with wide compatibility.
@@ -12,6 +12,24 @@ pub struct CPUTensor {
     data: Vec<f32>,
     /// Shape of the tensor
     shape: TensorShape,
+}
+
+impl ConstructableTensor for CPUTensor {
+    /// Creates a zero-initialized tensor of the given shape.
+    fn new(shape: TensorShape) -> Self {
+        Self {
+            data: vec![0.0; shape.num_elements()],
+            shape,
+        }
+    }
+
+    /// Creates an initialized tensor of the given shape filled with the given scalar.
+    fn from_scalar(shape: TensorShape, scalar: f32) -> Self {
+        Self {
+            data: vec![scalar; shape.num_elements()],
+            shape,
+        }
+    }
 }
 
 impl CPUTensor {
@@ -31,41 +49,22 @@ impl CPUTensor {
 }
 
 impl Tensor for CPUTensor {
-    /// Creates a zero-initialized tensor of the given shape.
-    fn new(shape: TensorShape) -> Self {
-        Self {
-            data: vec![0.0; shape.num_elements()],
-            shape,
-        }
-    }
-
-    /// Creates an initialized tensor of the given shape filled with the given scalar.
-    fn from_scalar(shape: TensorShape, scalar: f32) -> Self {
-        Self {
-            data: vec![scalar; shape.num_elements()],
-            shape,
-        }
-    }
-
     // Single-var operations
-    fn relu(&self) -> Self {
-        Self {
+    fn relu(&self) -> TensorOutput<Self> {
+        TensorOutput::Tensor(Self {
             shape: self.shape.clone(),
             data: self.data.iter().map(|x| x.max(0.0)).collect(),
-        }
+        })
     }
-    fn softmax(&self) -> Self {
+    fn softmax(&self) -> TensorOutput<Self> {
         let exp_sum = self.data.iter().cloned().map(f32::exp).sum::<f32>();
-        Self {
+        TensorOutput::Tensor(Self {
             shape: self.shape.clone(),
             data: self.data.iter().map(|&x| f32::exp(x) / exp_sum).collect(),
-        }
+        })
     }
-    fn neg(&self) -> Self {
-        Self {
-            shape: self.shape.clone(),
-            data: self.data.iter().map(|x| -x).collect(),
-        }
+    fn neg(&self) -> TensorOutput<Self> {
+        self.mul_scalar(-1.0).map_op(TensorOperation::Neg)
     }
 
     // Multi-var operations
@@ -82,10 +81,11 @@ impl Tensor for CPUTensor {
         })
     }
     fn sub(&self, other: &Self) -> TensorOutput<Self> {
-        let mut result = self.add(&other.neg());
-        // Update operation in error
-        if let TensorOutput::Invalid(error) = &mut result { error.operation = TensorOperation::Sub; }
-        result
+        let neg = match other.neg().map_op(TensorOperation::Sub) {
+            TensorOutput::Tensor(neg) => neg,
+            err => return err,
+        };
+        self.add(&neg).map_op(TensorOperation::Sub)
     }
     fn mul(&self, other: &Self) -> TensorOutput<Self> {
         // Validate shape. matches_mul_size_op Guarantees that both left and right are matrices, meaning indexing [0] and [1] cannot panic.
@@ -125,6 +125,12 @@ impl Tensor for CPUTensor {
                 }).sum::<f32>()
             }).collect(),
             shape: output_shape,
+        })
+    }
+    fn mul_scalar(&self, other: f32) -> TensorOutput<Self> {
+        TensorOutput::Tensor(Self {
+            data: self.data.iter().map(|v| v * other).collect(),
+            shape: self.shape.clone(),
         })
     }
 
