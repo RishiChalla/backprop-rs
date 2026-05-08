@@ -13,13 +13,30 @@ use crate::{Tensor, TensorShape};
 #[derive(Debug, Clone, Copy)]
 #[allow(dead_code)]
 pub(crate) enum TensorOperation {
+    // Single-var
     Relu,
-    Softmax,
     Neg,
+    Abs,
+    Exp,
+    Sign,
+    // Boolean Scalar
+    GreaterThanScalar,
+    GreaterThanOrEqualToScalar,
+    LessThanScalar,
+    LessThanOrEqualToScalar,
+    EqualScalar,
+    // Boolean
+    GreaterThan,
+    GreaterThanOrEqualTo,
+    LessThan,
+    LessThanOrEqualTo,
+    Equal,
+    // Multi-var
     Add,
-    Mul,
     Sub,
-    Div,
+    Mul,
+    MulScalar,
+    CrossEntropyLossLogits,
 }
 
 /// An error that occurs during a tensor operation.

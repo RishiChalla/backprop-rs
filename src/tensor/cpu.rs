@@ -2,7 +2,7 @@ use crate::{ConstructableTensor, Tensor, TensorOpError, TensorOperation, TensorO
 
 
 /// Tensor stored on the CPU, with no vectorization (no CUDA, no SIMD). A naive implementation with wide compatibility.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct CPUTensor {
     /// Tensor data. Data is stored row-wise -
     /// At one dim: [...row]
@@ -46,43 +46,69 @@ impl CPUTensor {
             && self.data.len() == other.data.len()
             && self.data.iter().zip(other.data.iter()).all(|(a, b)| (a - b).abs() <= epsilon)
     }
-}
 
-impl Tensor for CPUTensor {
-    // Single-var operations
-    fn relu(&self) -> Result<Self, TensorOpError> {
+    /// Performs an element-wise operation.
+    fn element_op(&self, op_impl: impl Fn(f32) -> f32) -> Result<Self, TensorOpError> {
         Ok(Self {
             shape: self.shape.clone(),
-            data: self.data.iter().map(|x| x.max(0.0)).collect(),
+            data: self.data.iter().cloned().map(op_impl).collect(),
         })
-    }
-    fn softmax(&self) -> Result<Self, TensorOpError> {
-        let exp_sum = self.data.iter().cloned().map(f32::exp).sum::<f32>();
-        Ok(Self {
-            shape: self.shape.clone(),
-            data: self.data.iter().map(|&x| f32::exp(x) / exp_sum).collect(),
-        })
-    }
-    fn neg(&self) -> Result<Self, TensorOpError> {
-        self.mul_scalar(-1.0).map_err(|err| err.with_op(TensorOperation::Neg))
     }
 
-    // Multi-var operations
-    fn add(&self, other: &Self) -> Result<Self, TensorOpError> {
+    /// Internal helper for getting batch index math correct for same-size operations.
+    /// Performs the provided closure for all required pairs for the same size operation.
+    fn same_size_op(&self, other: &Self, op: TensorOperation, op_impl: impl Fn(f32, f32) -> f32) -> Result<Self, TensorOpError> {
         if !self.shape.matches_same_size_op(&other.shape) {
-            return Err(TensorOpError::shape_mismatch(TensorOperation::Add, &self.shape, &other.shape));
+            return Err(TensorOpError::shape_mismatch(op, &self.shape, &other.shape));
         }
 
         let right_count = other.shape.num_elements();
 
         Ok(Self {
             shape: self.shape.clone(),
-            data: self.data.iter().enumerate().map(|(idx, a)| a + other.data[idx % right_count]).collect(),
+            data: self.data.iter().enumerate().map(|(idx, &lhs)| op_impl(lhs, other.data[idx % right_count])).collect(),
         })
     }
+}
+
+impl Tensor for CPUTensor {
+    // Single-var operations
+    fn relu(&self) -> Result<Self, TensorOpError> { self.element_op(|x| x.max(0.0)) }
+    fn neg(&self) -> Result<Self, TensorOpError> { self.element_op(|x| -x) }
+    fn abs(&self) -> Result<Self, TensorOpError> { self.element_op(|x| x.abs()) }
+    fn exp(&self) -> Result<Self, TensorOpError> { self.element_op(|x| x.exp()) }
+    fn sign(&self) -> Result<Self, TensorOpError> { self.element_op(|x| x.signum()) }
+
+    // Scalar Boolean operations
+    fn gt_scalar(&self, scalar: f32) -> Result<Self, TensorOpError> { self.element_op(|x| f32::from(x > scalar)) }
+    fn gte_scalar(&self, scalar: f32) -> Result<Self, TensorOpError> { self.element_op(|x| f32::from(x >= scalar)) }
+    fn lt_scalar(&self, scalar: f32) -> Result<Self, TensorOpError> { self.element_op(|x| f32::from(x < scalar)) }
+    fn lte_scalar(&self, scalar: f32) -> Result<Self, TensorOpError> { self.element_op(|x| f32::from(x <= scalar)) }
+    fn eq_scalar(&self, scalar: f32) -> Result<Self, TensorOpError> { self.element_op(|x| f32::from(x == scalar)) }
+
+    // Multi-var Boolean operations
+    fn gt(&self, other: &Self) -> Result<Self, TensorOpError> {
+        self.same_size_op(other, TensorOperation::GreaterThan, |lhs, rhs| f32::from(lhs > rhs))
+    }
+    fn gte(&self, other: &Self) -> Result<Self, TensorOpError> {
+        self.same_size_op(other, TensorOperation::GreaterThanOrEqualTo, |lhs, rhs| f32::from(lhs >= rhs))
+    }
+    fn lt(&self, other: &Self) -> Result<Self, TensorOpError> {
+        self.same_size_op(other, TensorOperation::LessThan, |lhs, rhs| f32::from(lhs < rhs))
+    }
+    fn lte(&self, other: &Self) -> Result<Self, TensorOpError> {
+        self.same_size_op(other, TensorOperation::LessThanOrEqualTo, |lhs, rhs| f32::from(lhs <= rhs))
+    }
+    fn eq(&self, other: &Self) -> Result<Self, TensorOpError> {
+        self.same_size_op(other, TensorOperation::Equal, |lhs, rhs| f32::from(lhs == rhs))
+    }
+
+    // Multi-var operations
+    fn add(&self, other: &Self) -> Result<Self, TensorOpError> {
+        self.same_size_op(other, TensorOperation::Add, |lhs, rhs| lhs + rhs)
+    }
     fn sub(&self, other: &Self) -> Result<Self, TensorOpError> {
-        let neg = other.neg().map_err(|err| err.with_op(TensorOperation::Sub))?;
-        self.add(&neg).map_err(|err| err.with_op(TensorOperation::Sub))
+        self.same_size_op(other, TensorOperation::Sub, |lhs, rhs| lhs - rhs)
     }
     fn mul(&self, other: &Self) -> Result<Self, TensorOpError> {
         // Validate shape. matches_mul_size_op Guarantees that both left and right are matrices, meaning indexing [0] and [1] cannot panic.
@@ -124,11 +150,14 @@ impl Tensor for CPUTensor {
             shape: output_shape,
         })
     }
-    fn mul_scalar(&self, other: f32) -> Result<Self, TensorOpError> {
-        Ok(Self {
-            data: self.data.iter().map(|v| v * other).collect(),
-            shape: self.shape.clone(),
-        })
+    fn mul_scalar(&self, scalar: f32) -> Result<Self, TensorOpError> { self.element_op(|x| x * scalar) }
+    fn cross_entropy_loss_logits(&self, target: &Self) -> Result<Self, TensorOpError> {
+        // Calculate softmax - per-batch
+        // if self.
+
+        // Calculate cross-entropy loss
+
+        todo!()
     }
 
     fn to_cpu(&self) -> CPUTensor { self.clone() }

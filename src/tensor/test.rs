@@ -32,11 +32,6 @@ fn assert_output_eq<T: Tensor>(actual: Result<T, TensorOpError>, expected: CPUTe
     assert_tensor_eq(expect_output(actual), expected);
 }
 
-fn softmax_expected(data: &[f32]) -> Vec<f32> {
-    let exp_sum = data.iter().copied().map(f32::exp).sum::<f32>();
-    data.iter().map(|&x| f32::exp(x) / exp_sum).collect()
-}
-
 fn test_relu<T: Tensor>(factory: TensorFactory<T>) {
     // No batching: ReLU should preserve positive matrix entries and clamp negative ones.
     assert_output_eq(
@@ -108,57 +103,6 @@ fn test_relu<T: Tensor>(factory: TensorFactory<T>) {
             0.0, 0.0,
             0.0, 0.0,
         ]),
-    );
-}
-
-fn test_softmax<T: Tensor>(factory: TensorFactory<T>) {
-    // No batching: validates the global normalization rule used by the current implementation.
-    let data = vec![0.0, 1.0, 2.0];
-    assert_output_eq(
-        tensor(factory, &[3], data.clone()).softmax(),
-        cpu_tensor(&[3], softmax_expected(&data)),
-    );
-
-    // Batched input: softmax currently normalizes over all flat values, not per batch.
-    let batched_data = vec![
-        // batch 0
-        0.0, 0.0,
-        0.0, 0.0,
-        // batch 1
-        0.0, 0.0,
-        0.0, 0.0,
-    ];
-    assert_output_eq(
-        tensor(factory, &[2, 2, 2], batched_data.clone()).softmax(),
-        cpu_tensor(&[2, 2, 2], softmax_expected(&batched_data)),
-    );
-
-    // Wide matrix: uniform values should still produce a valid distribution across all entries.
-    let wide_data = vec![
-        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-    ];
-    assert_output_eq(
-        tensor(factory, &[2, 10], wide_data.clone()).softmax(),
-        cpu_tensor(&[2, 10], softmax_expected(&wide_data)),
-    );
-
-    // Tall matrix: same values as the wide case, but with the opposite aspect ratio.
-    let tall_data = vec![
-        0.0, 0.0,
-        0.0, 0.0,
-        0.0, 0.0,
-        0.0, 0.0,
-        0.0, 0.0,
-        0.0, 0.0,
-        0.0, 0.0,
-        0.0, 0.0,
-        0.0, 0.0,
-        0.0, 0.0,
-    ];
-    assert_output_eq(
-        tensor(factory, &[10, 2], tall_data.clone()).softmax(),
-        cpu_tensor(&[10, 2], softmax_expected(&tall_data)),
     );
 }
 
@@ -475,7 +419,6 @@ fn test_cpu() {
     }
 
     test_relu::<CPUTensor>(make_cpu);
-    test_softmax::<CPUTensor>(make_cpu);
     test_neg::<CPUTensor>(make_cpu);
     test_add::<CPUTensor>(make_cpu);
     test_sub::<CPUTensor>(make_cpu);
